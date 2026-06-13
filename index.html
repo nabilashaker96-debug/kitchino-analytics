@@ -850,6 +850,7 @@ if (_checkSession()) {
       <input type="text" class="search-box" id="global-search" placeholder="🔍 Search customer / ID…" oninput="applyFilters()">
       <div class="live-dot" title="Live"></div>
       <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
+      <div id="auto-refresh-countdown" title="Auto-refresh countdown" style="font-size:10px;color:var(--text3);white-space:nowrap;min-width:52px;text-align:center">⏱ 3:00</div>
       <button class="refresh-btn" onclick="exportPDF()">⬇ Export</button>
       <button class="refresh-btn" onclick="showReconciliationPanel()" style="background:rgba(29,233,182,0.15);color:var(--teal);border-color:var(--teal)" title="Data Audit Report">⚙ Audit</button>
     </div>
@@ -874,7 +875,10 @@ if (_checkSession()) {
       </select>
       <button onclick="resetMobFilters()" style="background:rgba(255,82,82,0.12);border:1px solid rgba(255,82,82,0.3);color:var(--red);padding:7px 12px;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">✕ Reset</button>
     </div>
-    <div id="mob-filter-summary" style="font-size:10px;color:var(--text3);text-align:center"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div id="mob-filter-summary" style="font-size:10px;color:var(--text3)"></div>
+      <div id="mob-auto-refresh-countdown" style="font-size:10px;color:var(--text3);white-space:nowrap">⏱ 3:00</div>
+    </div>
   </div>
 
   <!-- PAGE CONTENT -->
@@ -4633,7 +4637,7 @@ function updateBadges() {
 // ── AUTO-REFRESH ARCHITECTURE ────────────────────────────────────────────────
 // Interval handle — kept so we can clear/restart it if the URL changes
 let _autoRefreshTimer = null;
-const AUTO_REFRESH_MS  = 5 * 60 * 1000;   // 5 minutes
+const AUTO_REFRESH_MS  = 3 * 60 * 1000;   // 3 minutes
 
 // Format a Date as "HH:MM" local time
 function _fmtTime(d) {
@@ -4747,9 +4751,30 @@ function runContractsDiagnostic() {
 }
 
 // Start (or restart) the 5-minute polling interval
+let _countdownTimer = null;
+let _nextRefreshAt  = 0;
+
+function _updateCountdown() {
+  const remaining = Math.max(0, _nextRefreshAt - Date.now());
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
+  const txt  = '⏱ ' + mins + ':' + String(secs).padStart(2,'0');
+  const el1  = document.getElementById('auto-refresh-countdown');
+  const el2  = document.getElementById('mob-auto-refresh-countdown');
+  if (el1) el1.textContent = txt;
+  if (el2) el2.textContent = txt;
+}
+
 function _startPolling() {
   if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
-  _autoRefreshTimer = setInterval(() => _silentFetch(true), AUTO_REFRESH_MS);
+  if (_countdownTimer)   clearInterval(_countdownTimer);
+  _nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
+  _autoRefreshTimer = setInterval(() => {
+    _nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
+    _silentFetch(true);
+  }, AUTO_REFRESH_MS);
+  _countdownTimer = setInterval(_updateCountdown, 1000);
+  _updateCountdown();
 }
 
 // Override the existing connectGoogleSheets to use the new silent-fetch path
