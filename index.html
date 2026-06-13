@@ -1756,6 +1756,7 @@ let CONTRACTS_DATA   = [];   // populated by _fetchContracts() from ContractsCon
 let ENGINE_RAW_ROWS   = [];    // Raw rows received from getMeasures connector
 let ENGINE_CLEAN_ROWS = [];    // Validated & normalized operational rows
 let ENGINE_READY      = false; // true once raw rows are loaded and cleaned
+let MOB_FILTERS = { year:'all', designer:'all', area:'all' }; // mobile filter state
 // ── Enterprise Data Quality Report — populated by engine_cleanRows() ──────────
 let ENGINE_QUALITY_REPORT = {
   timestamp:    null,
@@ -2070,16 +2071,14 @@ function engine_payments(rows) {
 
 // ── Main compute — called by computeFilteredState() when ENGINE_READY ─────────
 function engine_compute() {
-  // On mobile the desktop selects are hidden; read mob selects as authoritative
-  // source when they exist, then fall back to desktop selects.
-  const _fv = (mobId, deskId) => {
-    const mob = document.getElementById(mobId);
-    if (mob && mob.value && mob.value !== 'all') return mob.value;
+  // Use MOB_FILTERS if on mobile (any non-'all' value), else desktop selects
+  const _fv = (mobKey, deskId) => {
+    if (MOB_FILTERS[mobKey] && MOB_FILTERS[mobKey] !== 'all') return MOB_FILTERS[mobKey];
     return document.getElementById(deskId)?.value || 'all';
   };
-  const yearF     = _fv('mob-filter-year',     'filter-year');
-  const designerF = _fv('mob-filter-designer', 'filter-designer');
-  const areaF     = _fv('mob-filter-area',     'filter-area');
+  const yearF     = _fv('year',     'filter-year');
+  const designerF = _fv('designer', 'filter-designer');
+  const areaF     = _fv('area',     'filter-area');
   const filtered  = engine_filterRows(ENGINE_CLEAN_ROWS, {year:yearF, designer:designerF, area:areaF});
   const yearOnly  = engine_filterRows(ENGINE_CLEAN_ROWS, {year:yearF});
   const total      = filtered.length;
@@ -2358,14 +2357,9 @@ function computeFilteredState() {
   // ── ENGINE-ONLY: all computation from live Google Sheets rows ────────────
   if (ENGINE_READY) return engine_compute();
   // ── NOT CONNECTED: reset to empty state — show "connect" prompts ─────────
-  const _fv2 = (mobId, deskId) => {
-    const mob = document.getElementById(mobId);
-    if (mob && mob.value && mob.value !== 'all') return mob.value;
-    return document.getElementById(deskId)?.value || 'all';
-  };
-  const yearF     = _fv2('mob-filter-year',     'filter-year');
-  const designerF = _fv2('mob-filter-designer', 'filter-designer');
-  const areaF     = _fv2('mob-filter-area',     'filter-area');
+  const yearF     = (MOB_FILTERS.year     !== 'all') ? MOB_FILTERS.year     : (document.getElementById('filter-year')?.value     || 'all');
+  const designerF = (MOB_FILTERS.designer !== 'all') ? MOB_FILTERS.designer : (document.getElementById('filter-designer')?.value || 'all');
+  const areaF     = (MOB_FILTERS.area     !== 'all') ? MOB_FILTERS.area     : (document.getElementById('filter-area')?.value     || 'all');
   KITCHINO_STATE.year            = yearF;
   KITCHINO_STATE.designer        = designerF;
   KITCHINO_STATE.area            = areaF;
@@ -4269,21 +4263,20 @@ function toggleMobFilters() {
 }
 
 function applyMobFilters() {
-  // Sync mobile → desktop selects
-  const sync = (mobId, deskId) => {
-    const mob  = document.getElementById(mobId);
-    const desk = document.getElementById(deskId);
-    if (mob && desk) desk.value = mob.value;
-  };
-  sync('mob-filter-year',     'filter-year');
-  sync('mob-filter-designer', 'filter-designer');
-  sync('mob-filter-area',     'filter-area');
-  // Update summary label
+  // Write directly to MOB_FILTERS — engine_compute() reads this first
+  MOB_FILTERS.year     = document.getElementById('mob-filter-year')?.value     || 'all';
+  MOB_FILTERS.designer = document.getElementById('mob-filter-designer')?.value || 'all';
+  MOB_FILTERS.area     = document.getElementById('mob-filter-area')?.value     || 'all';
+  // Also sync to desktop selects (for pages that read them directly)
+  const sync = (val, deskId) => { const el = document.getElementById(deskId); if (el) el.value = val; };
+  sync(MOB_FILTERS.year,     'filter-year');
+  sync(MOB_FILTERS.designer, 'filter-designer');
+  sync(MOB_FILTERS.area,     'filter-area');
   _updateMobFilterSummary();
   applyFilters();
-  // On mobile the active page may already be built — force a rebuild
+  // Force rebuild active page (in case it was already in builtPages cache)
   const _ap = document.querySelector('.page.active')?.id.replace('page-','');
-  if (_ap && PAGE_BUILDERS[_ap]) {
+  if (_ap && _ap !== 'home' && PAGE_BUILDERS[_ap]) {
     builtPages.delete(_ap);
     PAGE_BUILDERS[_ap]();
     builtPages.add(_ap);
@@ -4291,11 +4284,17 @@ function applyMobFilters() {
 }
 
 function resetMobFilters() {
+  MOB_FILTERS = { year:'all', designer:'all', area:'all' };
   ['mob-filter-year','mob-filter-designer','mob-filter-area'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = 'all';
   });
-  applyMobFilters();
+  ['filter-year','filter-designer','filter-area'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = 'all';
+  });
+  _updateMobFilterSummary();
+  applyFilters();
 }
 
 function _updateMobFilterSummary() {
